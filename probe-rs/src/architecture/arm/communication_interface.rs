@@ -535,7 +535,9 @@ impl<'interface> ArmCommunicationInterface<Initialized> {
             tracing::trace!("Searching valid APs");
 
             let ap_span = tracing::debug_span!("AP discovery").entered();
-            for ap in valid_access_ports(self, dp) {
+            let valid_aps = sequence.valid_aps();
+            let ap_list = valid_aps.as_deref().unwrap_or(&[]);
+            for ap in valid_access_ports(self, dp, ap_list) {
                 let ap_state = ApInformation::read_from_target(self, ap)?;
                 tracing::debug!("AP {:x?}: {:?}", ap, ap_state);
 
@@ -776,8 +778,11 @@ impl ArmCommunicationInterface<Initialized> {
         &mut self,
         dp: DpAddress,
     ) -> Result<Option<ArmChipInfo>, ArmError> {
+        let sequence = self.state.sequence.clone();
+        let valid_aps = sequence.valid_aps();
+        let ap_list = valid_aps.as_deref().unwrap_or(&[]);
         // faults on some chips need to be cleaned up.
-        let aps = valid_access_ports(self, dp);
+        let aps = valid_access_ports(self, dp, ap_list);
 
         // Check sticky error and cleanup if necessary
         let ctrl_reg: crate::architecture::arm::dp::Ctrl = self.read_dp_register(dp)?;

@@ -401,6 +401,12 @@ fn cortex_m_reset_system(interface: &mut dyn ArmProbe) -> Result<(), ArmError> {
 ///
 /// Should be implemented on a custom handle for chips that require special sequence code.
 pub trait ArmDebugSequence: Send + Sync + Debug {
+    /// Provide a list of valid APs for the target.
+    /// All APs are scanned by default if none are provided.
+    fn valid_aps(&self) -> Option<Vec<u8>> {
+        None
+    }
+
     /// Assert a system-wide reset line nRST. This is based on the
     /// `ResetHardwareAssert` function from the [ARM SVD Debug Description].
     ///

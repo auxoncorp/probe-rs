@@ -229,11 +229,16 @@ where
 /// Return a Vec of all valid access ports found that the target connected to the debug_probe.
 /// Can fail silently under the hood testing an ap that doesn't exist and would require cleanup.
 #[tracing::instrument(skip(debug_port))]
-pub(crate) fn valid_access_ports<AP>(debug_port: &mut AP, dp: DpAddress) -> Vec<GenericAp>
+pub(crate) fn valid_access_ports<AP>(
+    debug_port: &mut AP,
+    dp: DpAddress,
+    valid_aps: &[u8],
+) -> Vec<GenericAp>
 where
     AP: ApAccess,
 {
     (0..=255)
+        .filter(|ap| valid_aps.contains(ap) || valid_aps.is_empty())
         .map(|ap| GenericAp::new(ApAddress { dp, ap }))
         .take_while(|port| access_port_is_valid(debug_port, *port))
         .collect::<Vec<GenericAp>>()

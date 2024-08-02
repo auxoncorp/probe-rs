@@ -1382,7 +1382,7 @@ impl StlinkArmDebug {
             ap_information: Vec::new(),
         };
 
-        for ap in valid_access_ports(&mut interface, DpAddress::Default) {
+        for ap in valid_access_ports(&mut interface, DpAddress::Default, &[]) {
             let ap_state = match ApInformation::read_from_target(&mut interface, ap) {
                 Ok(state) => state,
                 Err(e) => {
@@ -1497,7 +1497,7 @@ impl ArmProbeInterface for StlinkArmDebug {
             return Err(DebugProbeError::from(StlinkError::MultidropNotSupported).into());
         }
 
-        for access_port in valid_access_ports(self, dp) {
+        for access_port in valid_access_ports(self, dp, &[]) {
             let idr: IDR = self.read_ap_register(access_port)?;
             tracing::debug!("{:#x?}", idr);
 
