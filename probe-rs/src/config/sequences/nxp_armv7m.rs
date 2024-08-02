@@ -13,7 +13,7 @@ use crate::{
         dp::{Abort, Ctrl, DpAccess, Select},
         memory::adi_v5_memory_interface::ArmProbe,
         sequences::ArmDebugSequence,
-        ApAddress, ArmCommunicationInterface, ArmError, DpAddress,
+        ApAddress, ArmCommunicationInterface, ArmError, ArmProbeInterface, DpAddress, Pins,
     },
     core::MemoryMappedRegister,
 };
@@ -339,5 +339,123 @@ impl ArmDebugSequence for MIMXRT11xx {
 
         interface.read_word_32(Dhcsr::get_mmio_address())?;
         Ok(())
+    }
+}
+
+/// Debug sequences for S32K344 MCUs.
+#[derive(Debug)]
+pub struct S32K344(());
+
+impl S32K344 {
+    /// Valid APs.
+    /// The S32K344 freaks out when you scan for nonexistent APs.
+    const APB_AP_ID: u8 = 1;
+    const CM7_0_AHB_AP_ID: u8 = 4;
+    const MDM_AP_ID: u8 = 6;
+    const SDA_AP_ID: u8 = 7;
+
+    /// Create a sequence handle for the S32K344.
+    pub fn create() -> Arc<dyn ArmDebugSequence> {
+        Arc::new(Self(()))
+    }
+
+    fn enable_debug(&self, interface: &mut dyn ArmProbeInterface) -> Result<(), ArmError> {
+        tracing::debug!("Enabling S32K344 debug");
+        const SDA_AP_ID: u8 = 7;
+        let ap = ApAddress::with_default_dp(SDA_AP_ID);
+        const DBGENCTRL: u8 = 0x80;
+        interface.write_raw_ap_register(ap, DBGENCTRL, 0x3000_00F0)?;
+        Ok(())
+    }
+
+    fn release_from_reset(&self, interface: &mut dyn ArmProbeInterface) -> Result<(), ArmError> {
+        tracing::debug!("Releasing S32K344 from reset");
+        const SDA_AP_ID: u8 = 7;
+        let ap = ApAddress::with_default_dp(SDA_AP_ID);
+        const SDAAPRSTCTRL: u8 = 0x90;
+        interface.write_raw_ap_register(ap, SDAAPRSTCTRL, 0x0600_0000)?;
+        Ok(())
+    }
+}
+
+impl ArmDebugSequence for S32K344 {
+    fn valid_aps(&self) -> Option<Vec<u8>> {
+        Some(vec![
+            Self::APB_AP_ID,
+            Self::CM7_0_AHB_AP_ID,
+            Self::MDM_AP_ID,
+            Self::SDA_AP_ID,
+        ])
+    }
+
+    fn debug_device_unlock(
+        &self,
+        interface: &mut dyn ArmProbeInterface,
+        _default_ap: MemoryAp,
+        _permissions: &crate::Permissions,
+    ) -> Result<(), ArmError> {
+        self.enable_debug(interface)
+    }
+
+    // NOTE: I copied this from MIMXRT11xx, seems to work
+    fn reset_system(
+        &self,
+        interface: &mut dyn ArmProbe,
+        _: crate::CoreType,
+        _: Option<u64>,
+    ) -> Result<(), ArmError> {
+        tracing::debug!("Halting S32K344 core before VECTRESET");
+        let mut dhcsr = Dhcsr(0);
+        dhcsr.set_c_halt(true);
+        dhcsr.set_c_debugen(true);
+        dhcsr.enable_write();
+
+        interface.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
+        std::thread::sleep(Duration::from_millis(100));
+
+        tracing::debug!("Resetting S32K344 with VECTRESET");
+        let mut aircr = Aircr(0);
+        aircr.vectkey();
+        aircr.set_vectreset(true);
+
+        interface
+            .write_word_32(Aircr::get_mmio_address(), aircr.into())
+            .ok();
+        interface.flush().ok();
+
+        std::thread::sleep(Duration::from_millis(100));
+
+        interface.read_word_32(Dhcsr::get_mmio_address())?;
+
+        Ok(())
+    }
+
+    fn reset_hardware_deassert(&self, memory: &mut dyn ArmProbe) -> Result<(), ArmError> {
+        let interface = memory.get_arm_communication_interface()?;
+        self.release_from_reset(interface)?;
+        self.enable_debug(interface)?;
+
+        let mut n_reset = Pins(0);
+        n_reset.set_nreset(true);
+        let n_reset = n_reset.0 as u32;
+
+        let can_read_pins = memory.swj_pins(n_reset, n_reset, 0)? != 0xffff_ffff;
+
+        if can_read_pins {
+            let start = Instant::now();
+
+            while start.elapsed() < Duration::from_secs(1) {
+                if Pins(memory.swj_pins(n_reset, n_reset, 0)? as u8).nreset() {
+                    return Ok(());
+                }
+
+                std::thread::sleep(Duration::from_millis(100));
+            }
+
+            Err(ArmError::Timeout)
+        } else {
+            std::thread::sleep(Duration::from_millis(100));
+            Ok(())
+        }
     }
 }

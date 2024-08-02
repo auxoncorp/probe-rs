@@ -13,7 +13,7 @@ use super::{
         nrf52::Nrf52,
         nrf53::Nrf5340,
         nrf91::Nrf9160,
-        nxp_armv7m::{MIMXRT10xx, MIMXRT11xx},
+        nxp_armv7m::{MIMXRT10xx, MIMXRT11xx, S32K344},
         nxp_armv8m::{LPC55Sxx, MIMXRT5xxS},
         stm32_armv6::{Stm32Armv6, Stm32Armv6Family},
         stm32_armv7::Stm32Armv7,
@@ -123,6 +123,8 @@ impl Target {
             DebugSequence::Arm(MIMXRT11xx::create())
         } else if chip.name.starts_with("MIMXRT5") {
             DebugSequence::Arm(MIMXRT5xxS::create())
+        } else if chip.name.starts_with("S32K344") {
+            DebugSequence::Arm(S32K344::create())
         } else if chip.name.starts_with("LPC55S16")
             || chip.name.starts_with("LPC55S26")
             || chip.name.starts_with("LPC55S28")
