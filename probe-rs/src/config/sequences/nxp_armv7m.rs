@@ -354,6 +354,13 @@ impl S32K344 {
     const MDM_AP_ID: u8 = 6;
     const SDA_AP_ID: u8 = 7;
 
+    /// MDM_AP registers
+    const MDMAPCTL: u8 = 0x04;
+
+    /// SDA_AP registers
+    const DBGENCTRL: u8 = 0x80;
+    const SDAAPRSTCTRL: u8 = 0x90;
+
     /// Create a sequence handle for the S32K344.
     pub fn create() -> Arc<dyn ArmDebugSequence> {
         Arc::new(Self(()))
@@ -361,19 +368,30 @@ impl S32K344 {
 
     fn enable_debug(&self, interface: &mut dyn ArmProbeInterface) -> Result<(), ArmError> {
         tracing::debug!("Enabling S32K344 debug");
-        const SDA_AP_ID: u8 = 7;
-        let ap = ApAddress::with_default_dp(SDA_AP_ID);
-        const DBGENCTRL: u8 = 0x80;
-        interface.write_raw_ap_register(ap, DBGENCTRL, 0x3000_00F0)?;
+        let ap = ApAddress::with_default_dp(Self::SDA_AP_ID);
+        interface.write_raw_ap_register(ap, Self::DBGENCTRL, 0x3000_00F0)?;
+
         Ok(())
     }
 
     fn release_from_reset(&self, interface: &mut dyn ArmProbeInterface) -> Result<(), ArmError> {
         tracing::debug!("Releasing S32K344 from reset");
-        const SDA_AP_ID: u8 = 7;
-        let ap = ApAddress::with_default_dp(SDA_AP_ID);
-        const SDAAPRSTCTRL: u8 = 0x90;
-        interface.write_raw_ap_register(ap, SDAAPRSTCTRL, 0x0600_0000)?;
+        let ap = ApAddress::with_default_dp(Self::SDA_AP_ID);
+        interface.write_raw_ap_register(ap, Self::SDAAPRSTCTRL, 0x0600_0000)?;
+        Ok(())
+    }
+
+    fn functional_reset(&self, interface: &mut dyn ArmProbeInterface) -> Result<(), ArmError> {
+        tracing::debug!("S32K344 functional reset");
+        let ap = ApAddress::with_default_dp(Self::MDM_AP_ID);
+        // Assert RSTRELCM7/RSTRELTLn, CMnDBGREQ (MDMAPCTL)
+        interface.write_raw_ap_register(ap, Self::MDMAPCTL, 0x0040_0B00)?;
+        // Assert RSTRELCM7/RSTRELTLn, CMnDBGREQ and SYSFUNCRST (MDMAPCTL)
+        interface.write_raw_ap_register(ap, Self::MDMAPCTL, 0x0040_0B20)?;
+        // Assert RSTRELCM7/RSTRELTLn, CMnDBGREQ (MDMAPCTL)
+        interface.write_raw_ap_register(ap, Self::MDMAPCTL, 0x0040_0B00)?;
+        // Assert RSTRELCM7/RSTRELTLn (MDMAPCTL)
+        interface.write_raw_ap_register(ap, Self::MDMAPCTL, 0x0040_0000)?;
         Ok(())
     }
 }
@@ -397,14 +415,15 @@ impl ArmDebugSequence for S32K344 {
         self.enable_debug(interface)
     }
 
-    // NOTE: I copied this from MIMXRT11xx, seems to work
     fn reset_system(
         &self,
         interface: &mut dyn ArmProbe,
         _: crate::CoreType,
         _: Option<u64>,
     ) -> Result<(), ArmError> {
-        tracing::debug!("Halting S32K344 core before VECTRESET");
+        self.functional_reset(interface.get_arm_communication_interface()?)?;
+
+        tracing::debug!("Halting S32K344 core before SYSRESETREQ");
         let mut dhcsr = Dhcsr(0);
         dhcsr.set_c_halt(true);
         dhcsr.set_c_debugen(true);
@@ -413,21 +432,47 @@ impl ArmDebugSequence for S32K344 {
         interface.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
         std::thread::sleep(Duration::from_millis(100));
 
-        tracing::debug!("Resetting S32K344 with VECTRESET");
+        tracing::debug!("Resetting S32K344 with SYSRESETREQ");
         let mut aircr = Aircr(0);
         aircr.vectkey();
-        aircr.set_vectreset(true);
+        aircr.set_sysresetreq(true);
 
+        // Ignore write and flush errors that will occur due to the reset reaction.
         interface
             .write_word_32(Aircr::get_mmio_address(), aircr.into())
             .ok();
         interface.flush().ok();
 
+        // Wait for the reset to finish...
         std::thread::sleep(Duration::from_millis(100));
 
-        interface.read_word_32(Dhcsr::get_mmio_address())?;
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_micros(50_0000) {
+            let dhcsr = match interface.read_word_32(Dhcsr::get_mmio_address()) {
+                Ok(val) => Dhcsr(val),
+                Err(ArmError::AccessPort {
+                    source:
+                        AccessPortError::RegisterRead { .. } | AccessPortError::RegisterWrite { .. },
+                    ..
+                }) => {
+                    // Some combinations of debug probe and target (in
+                    // particular, hs-probe and ATSAMD21) result in
+                    // register read errors while the target is
+                    // resetting.
+                    //
+                    // See here for more info: https://github.com/probe-rs/probe-rs/pull/1174#issuecomment-1275568493
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
 
-        Ok(())
+            // Wait until the S_RESET_ST bit is cleared on a read
+            if !dhcsr.s_reset_st() {
+                return Ok(());
+            }
+        }
+
+        Err(ArmError::Timeout)
     }
 
     fn reset_hardware_deassert(&self, memory: &mut dyn ArmProbe) -> Result<(), ArmError> {
@@ -435,6 +480,7 @@ impl ArmDebugSequence for S32K344 {
         self.release_from_reset(interface)?;
         self.enable_debug(interface)?;
 
+        // The rest is just the default reset_hardware_deassert impl
         let mut n_reset = Pins(0);
         n_reset.set_nreset(true);
         let n_reset = n_reset.0 as u32;
