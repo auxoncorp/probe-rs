@@ -424,13 +424,23 @@ impl ArmDebugSequence for S32K344 {
         self.functional_reset(interface.get_arm_communication_interface()?)?;
 
         tracing::debug!("Halting S32K344 core before SYSRESETREQ");
-        let mut dhcsr = Dhcsr(0);
-        dhcsr.set_c_halt(true);
-        dhcsr.set_c_debugen(true);
-        dhcsr.enable_write();
+        let mut value = Dhcsr(0);
+        value.set_c_halt(true);
+        value.set_c_debugen(true);
+        value.enable_write();
 
-        interface.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
-        std::thread::sleep(Duration::from_millis(100));
+        const NUM_HALT_RETRIES: u32 = 10;
+        for i in 0..NUM_HALT_RETRIES {
+            interface.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+            let dhcsr = Dhcsr(interface.read_word_32(Dhcsr::get_mmio_address())?);
+            if dhcsr.s_halt() {
+                break;
+            }
+            if i >= NUM_HALT_RETRIES - 1 {
+                return Err(ArmError::Timeout);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
 
         tracing::debug!("Resetting S32K344 with SYSRESETREQ");
         let mut aircr = Aircr(0);
