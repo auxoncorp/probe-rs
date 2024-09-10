@@ -527,14 +527,26 @@ impl DebugCache {
     }
 }
 
-/// Marker structure for S32K344 devices.
+/// Marker structure for S32K3xx devices.
 #[derive(Debug)]
-pub struct S32K344(());
+pub struct S32K3xx {
+    // NOTE: we should be able to detect this
+    // at runtime
+    variant: S32Variant,
+}
 
-impl S32K344 {
+#[derive(Debug)]
+enum S32Variant {
+    K344,
+    K396,
+}
+
+impl S32K3xx {
     /// Valid APs.
     const APB_AP_ID: u8 = 1;
     const CM7_0_AHB_AP_ID: u8 = 4;
+    const CM7_1_AHB_AP_ID: u8 = 5;
+    const CM7_2_AHB_AP_ID: u8 = 3;
     const MDM_AP_ID: u8 = 6;
     const SDA_AP_ID: u8 = 7;
 
@@ -546,12 +558,21 @@ impl S32K344 {
     const SDAAPRSTCTRL: u8 = 0x90;
 
     /// Create a sequence handle for the S32K344.
-    pub fn create() -> Arc<dyn ArmDebugSequence> {
-        Arc::new(Self(()))
+    pub fn create_344() -> Arc<dyn ArmDebugSequence> {
+        Arc::new(Self {
+            variant: S32Variant::K344,
+        })
+    }
+
+    /// Create a sequence handle for the S32K396.
+    pub fn create_396() -> Arc<dyn ArmDebugSequence> {
+        Arc::new(Self {
+            variant: S32Variant::K396,
+        })
     }
 
     fn enable_debug<T: DapAccess + ?Sized>(&self, interface: &mut T) -> Result<(), ArmError> {
-        tracing::debug!("Enabling S32K344 debug");
+        tracing::debug!("Enabling S32K3xx debug");
         let ap = FullyQualifiedApAddress::v1_with_default_dp(Self::SDA_AP_ID);
         // Enable M7 Debug in SDA_AP.DBGENCTRL
         interface.write_raw_ap_register(&ap, Self::DBGENCTRL, 0x3000_00F0)?;
@@ -559,15 +580,21 @@ impl S32K344 {
     }
 
     fn release_from_reset<T: DapAccess + ?Sized>(&self, interface: &mut T) -> Result<(), ArmError> {
-        tracing::debug!("Releasing S32K344 from reset");
+        tracing::debug!("Releasing S32K3xx from reset");
         let ap = FullyQualifiedApAddress::v1_with_default_dp(Self::SDA_AP_ID);
-        // Release CM7_0/CM7_1 from reset (RSTRELTLCM7n = 1)
-        interface.write_raw_ap_register(&ap, Self::SDAAPRSTCTRL, 0x0600_0000)?;
+        // Release cores from reset (RSTRELTLCM7n = 1)
+        let ctrl = match self.variant {
+            // CM7_0/CM7_1
+            S32Variant::K344 => 0x0600_0000,
+            // CM7_0/CM7_1/CM7_2
+            S32Variant::K396 => 0x0E00_0000,
+        };
+        interface.write_raw_ap_register(&ap, Self::SDAAPRSTCTRL, ctrl)?;
         Ok(())
     }
 
     fn functional_reset<T: DapAccess + ?Sized>(&self, interface: &mut T) -> Result<(), ArmError> {
-        tracing::debug!("S32K344 functional reset");
+        tracing::debug!("S32K3xx functional reset");
         let ap = FullyQualifiedApAddress::v1_with_default_dp(Self::MDM_AP_ID);
         // Assert RSTRELCM7/RSTRELTLn, CMnDBGREQ (MDMAPCTL)
         interface.write_raw_ap_register(&ap, Self::MDMAPCTL, 0x0040_0B00)?;
@@ -581,15 +608,25 @@ impl S32K344 {
     }
 }
 
-impl ArmDebugSequence for S32K344 {
-    /// The S32K344 hard faults when you scan for nonexistent APs.
+impl ArmDebugSequence for S32K3xx {
+    /// The S32K3xx hard faults when you scan for nonexistent APs.
     fn valid_access_ports(&self) -> Option<&'static [u8]> {
-        Some(&[
-            Self::APB_AP_ID,
-            Self::CM7_0_AHB_AP_ID,
-            Self::MDM_AP_ID,
-            Self::SDA_AP_ID,
-        ])
+        match self.variant {
+            S32Variant::K344 => Some(&[
+                Self::APB_AP_ID,
+                Self::CM7_0_AHB_AP_ID,
+                Self::MDM_AP_ID,
+                Self::SDA_AP_ID,
+            ]),
+            S32Variant::K396 => Some(&[
+                Self::APB_AP_ID,
+                Self::CM7_0_AHB_AP_ID,
+                Self::CM7_1_AHB_AP_ID,
+                Self::CM7_2_AHB_AP_ID,
+                Self::MDM_AP_ID,
+                Self::SDA_AP_ID,
+            ]),
+        }
     }
 
     fn debug_device_unlock(
@@ -609,7 +646,7 @@ impl ArmDebugSequence for S32K344 {
     ) -> Result<(), ArmError> {
         self.functional_reset(interface.get_arm_communication_interface()?)?;
 
-        tracing::debug!("Halting S32K344 core before SYSRESETREQ");
+        tracing::debug!("Halting S32K3xx core before SYSRESETREQ");
         let mut value = Dhcsr(0);
         value.set_c_halt(true);
         value.set_c_debugen(true);
@@ -628,7 +665,7 @@ impl ArmDebugSequence for S32K344 {
             thread::sleep(Duration::from_millis(50));
         }
 
-        tracing::debug!("Resetting S32K344 with SYSRESETREQ");
+        tracing::debug!("Resetting S32K3xx with SYSRESETREQ");
         let mut aircr = Aircr(0);
         aircr.vectkey();
         aircr.set_sysresetreq(true);

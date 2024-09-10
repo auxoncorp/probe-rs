@@ -205,6 +205,80 @@ variants:
   flash_algorithms:
   - s32k3x4_code
   - s32k3x4_data
+- name: S32K396
+  cores:
+  - name: cortex-m7_0
+    type: armv7em
+    core_access_options: !Arm
+      ap: 4
+      psel: 0x0
+  - name: cortex-m7_1
+    type: armv7em
+    core_access_options: !Arm
+      ap: 5
+      psel: 0x0
+  - name: cortex-m7_2
+    type: armv7em
+    core_access_options: !Arm
+      ap: 3
+      psel: 0x0
+  memory_map:
+  - !Nvm
+    name: PFlash
+    range:
+      start: 0x400000
+      end: 0x800000
+    cores:
+    - cortex-m7_0
+    - cortex-m7_1
+    - cortex-m7_2
+    access:
+      write: false
+      boot: true
+  - !Generic
+    name: DFlash
+    range:
+      start: 0x10000000
+      end: 0x10020000
+    cores:
+    - cortex-m7_0
+    - cortex-m7_1
+    - cortex-m7_2
+    access:
+      write: false
+  - !Generic
+    name: DTCM_0
+    range:
+      start: 0x21000000
+      end: 0x21010000
+    cores:
+    - cortex-m7_0
+  - !Generic
+    name: DTCM_1
+    range:
+      start: 0x21400000
+      end: 0x21410000
+    cores:
+    - cortex-m7_1
+  - !Generic
+    name: DTCM_2
+    range:
+      start: 0x21800000
+      end: 0x21810000
+    cores:
+    - cortex-m7_2
+  - !Ram
+    name: SRAM_0
+    range:
+      start: 0x20400000
+      end: 0x20440000
+    cores:
+    - cortex-m7_0
+    - cortex-m7_1
+    - cortex-m7_2
+  flash_algorithms:
+  - s32k3x4_code
+  - s32k3x4_data
 flash_algorithms:
 - name: s32k3x2_code
   description: S32K3x2 2MB Code Flash (8KB Sector)

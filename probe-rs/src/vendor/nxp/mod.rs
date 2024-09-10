@@ -6,7 +6,7 @@ use crate::{
     config::DebugSequence,
     vendor::{
         nxp::sequences::{
-            nxp_armv7m::{MIMXRT10xx, MIMXRT11xx, S32K344},
+            nxp_armv7m::{MIMXRT10xx, MIMXRT11xx, S32K3xx},
             nxp_armv8m::{
                 LPC55Sxx, MIMXRT5xxS,
                 MIMXRTFamily::{MIMXRT5, MIMXRT6},
@@ -29,7 +29,9 @@ impl Vendor for Nxp {
         } else if chip.name.starts_with("MIMXRT11") {
             DebugSequence::Arm(MIMXRT11xx::create())
         } else if chip.name.starts_with("S32K344") {
-            DebugSequence::Arm(S32K344::create())
+            DebugSequence::Arm(S32K3xx::create_344())
+        } else if chip.name.starts_with("S32K396") {
+            DebugSequence::Arm(S32K3xx::create_396())
         } else if chip.name.starts_with("MIMXRT5") {
             DebugSequence::Arm(MIMXRT5xxS::create(MIMXRT5))
         } else if chip.name.starts_with("MIMXRT6") {
