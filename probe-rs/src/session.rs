@@ -154,13 +154,15 @@ impl Session {
             })
             .collect();
 
-        let mut session = if let Architecture::Arm = target.architecture() {
+        let session = if let Architecture::Arm = target.architecture() {
             Self::attach_arm(probe, target, attach_method, permissions, cores)?
         } else {
             Self::attach_jtag(probe, target, attach_method, permissions, cores)?
         };
 
-        session.clear_all_hw_breakpoints()?;
+        // NOTE: The S32K396 core1/core2 may not be enabled and this will fail.
+        // Up to the application to clear breakpoints on a per-core basis.
+        //session.clear_all_hw_breakpoints()?;
 
         Ok(session)
     }
