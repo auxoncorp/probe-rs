@@ -12,7 +12,7 @@ use std::{
 use crate::{
     architecture::arm::{
         ap::{memory_ap::MemoryApType, AccessPortError, AccessPortType},
-        armv7m::{FpCtrl, FpRev2CompX},
+        armv7m::{Demcr, FpCtrl, FpRev2CompX},
         core::{
             armv7m::{Aircr, Dhcsr},
             registers::cortex_m::PC,
@@ -22,6 +22,7 @@ use crate::{
         ArmError, ArmProbeInterface, DapAccess, FullyQualifiedApAddress, Pins,
     },
     core::MemoryMappedRegister,
+    CoreType,
 };
 
 /// Debug sequences for MIMXRT10xx MCUs.
@@ -736,5 +737,32 @@ impl ArmDebugSequence for S32K3xx {
             std::thread::sleep(Duration::from_millis(100));
             Ok(())
         }
+    }
+
+    fn debug_core_stop(
+        &self,
+        interface: &mut dyn ArmMemoryInterface,
+        core_type: CoreType,
+    ) -> Result<(), ArmError> {
+        if core_type.is_cortex_m() {
+            // System Control Space (SCS) offset as defined in Armv6-M/Armv7-M.
+            // Disable Core Debug via DHCSR
+            let mut dhcsr = Dhcsr(0);
+            dhcsr.enable_write();
+            interface.write_word_32(Dhcsr::get_mmio_address(), dhcsr.0)?;
+
+            // Disable DebugMonitor handler,
+            // halting debug traps, and Reset Vector Catch.
+            // Leave DWT/ITM enabled if it currently is so we don't kill the clock source for
+            // tracing libraries when dealing with reset recover
+            let prev_demcr = Demcr(interface.read_word_32(Demcr::get_mmio_address())?);
+            let mut new_dmcr = Demcr::from(0);
+            if prev_demcr.trcena() {
+                new_dmcr.set_trcena(true);
+            }
+            interface.write_word_32(Demcr::get_mmio_address(), new_dmcr.into())?;
+        }
+
+        Ok(())
     }
 }
