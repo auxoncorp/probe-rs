@@ -539,6 +539,7 @@ pub struct S32K3xx {
 #[derive(Debug)]
 enum S32Variant {
     K344,
+    K388,
     K396,
 }
 
@@ -548,6 +549,7 @@ impl S32K3xx {
     const CM7_0_AHB_AP_ID: u8 = 4;
     const CM7_1_AHB_AP_ID: u8 = 5;
     const CM7_2_AHB_AP_ID: u8 = 3;
+    const CM7_3_AHB_AP_ID: u8 = 8;
     const MDM_AP_ID: u8 = 6;
     const SDA_AP_ID: u8 = 7;
 
@@ -562,6 +564,13 @@ impl S32K3xx {
     pub fn create_344() -> Arc<dyn ArmDebugSequence> {
         Arc::new(Self {
             variant: S32Variant::K344,
+        })
+    }
+
+    /// Create a sequence handle for the S32K388.
+    pub fn create_388() -> Arc<dyn ArmDebugSequence> {
+        Arc::new(Self {
+            variant: S32Variant::K388,
         })
     }
 
@@ -587,6 +596,8 @@ impl S32K3xx {
         let ctrl = match self.variant {
             // CM7_0/CM7_1
             S32Variant::K344 => 0x0600_0000,
+            // CM7_0/CM7_1/CM7_2/CM7_3
+            S32Variant::K388 => 0x1E00_0000,
             // CM7_0/CM7_1/CM7_2
             S32Variant::K396 => 0x0E00_0000,
         };
@@ -616,6 +627,16 @@ impl ArmDebugSequence for S32K3xx {
             S32Variant::K344 => Some(&[
                 Self::APB_AP_ID,
                 Self::CM7_0_AHB_AP_ID,
+                Self::MDM_AP_ID,
+                Self::SDA_AP_ID,
+            ]),
+            S32Variant::K388 => Some(&[
+                Self::APB_AP_ID,
+                Self::CM7_0_AHB_AP_ID,
+                // Disabled due to lockstep configuration
+                //Self::CM7_1_AHB_AP_ID,
+                Self::CM7_2_AHB_AP_ID,
+                Self::CM7_3_AHB_AP_ID,
                 Self::MDM_AP_ID,
                 Self::SDA_AP_ID,
             ]),
