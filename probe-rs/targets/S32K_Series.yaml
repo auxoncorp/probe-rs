@@ -374,12 +374,6 @@ variants:
     core_access_options: !Arm
       ap: 4
       psel: 0x0
-# Disabled due to lock-step config
-#  - name: cortex-m7_1
-#    type: armv7em
-#    core_access_options: !Arm
-#      ap: 5
-#      psel: 0x0
   - name: cortex-m7_2
     type: armv7em
     core_access_options: !Arm
@@ -398,7 +392,6 @@ variants:
       end: 0xA00000
     cores:
     - cortex-m7_0
-#    - cortex-m7_1
     - cortex-m7_2
     - cortex-m7_3
     access:
@@ -411,7 +404,6 @@ variants:
       end: 0x10040000
     cores:
     - cortex-m7_0
-#    - cortex-m7_1
     - cortex-m7_2
     - cortex-m7_3
     access:
@@ -423,13 +415,6 @@ variants:
       end: 0x21020000
     cores:
     - cortex-m7_0
-#  - !Generic
-#    name: DTCM_1
-#    range:
-#      start: 0x21400000
-#      end: 0x21420000
-#    cores:
-#    - cortex-m7_1
   - !Generic
     name: DTCM_2
     range:
@@ -440,18 +425,17 @@ variants:
   - !Generic
     name: DTCM_3
     range:
-      start: 0x21800000
-      end: 0x21820000
+      start: 0x21C00000
+      end: 0x21C20000
     cores:
     - cortex-m7_3
   - !Ram
     name: SRAM_0
     range:
-      start: 0x21C00000
-      end: 0x21C20000
+      start: 0x20400000
+      end: 0x20440000
     cores:
     - cortex-m7_0
-#    - cortex-m7_1
     - cortex-m7_2
     - cortex-m7_3
   flash_algorithms:
